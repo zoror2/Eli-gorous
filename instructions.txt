@@ -1,0 +1,515 @@
+=============================================================
+  DATAGOD HEALTH — TEAMMATE 3: DATABASE + HOSPITAL AUTOMATIONS
+  Branch name: feature/database-automations
+  Repo: zoror2/Eli-gorous
+=============================================================
+
+YOUR ROLE:
+You are setting up BOTH databases with real data and building
+all hospital automation workflows — patient registration,
+discharge, prescription warnings, lab report processing.
+
+TECH STACK:
+- Python 3.11+
+- PostgreSQL (clinical database)
+- SQLite (operations database)
+- SQLAlchemy
+- pandas
+- pdfplumber (PDF extraction)
+- requests
+
+-------------------------------------------------------------
+STEP 1 — SETUP
+-------------------------------------------------------------
+
+  mkdir datagod-database
+  cd datagod-database
+  python -m venv venv
+  source venv/bin/activate
+
+  pip install sqlalchemy pandas psycopg2-binary pdfplumber
+  pip install requests python-dotenv faker
+
+Install PostgreSQL on your machine:
+  Windows: download from postgresql.org
+  Mac: brew install postgresql
+  Linux: sudo apt install postgresql
+
+Create the clinical database:
+  psql -U postgres
+  CREATE DATABASE clinical_db;
+  \q
+
+-------------------------------------------------------------
+STEP 2 — FOLDER STRUCTURE
+-------------------------------------------------------------
+
+datagod-database/
+├── setup/
+│   ├── download_data.py        ← downloads Kaggle dataset
+│   ├── create_clinical_db.py   ← creates + populates clinical DB
+│   ├── create_operations_db.py ← creates operations DB schema
+│   └── seed_operations_db.py   ← adds sample operations data
+├── automations/
+│   ├── patient_registration.py ← register new patients
+│   ├── discharge_pipeline.py   ← full discharge workflow
+│   ├── prescription_checker.py ← drug interaction checker
+│   ├── lab_processor.py        ← extract + process lab PDFs
+│   └── appointment_scheduler.py ← auto-schedule appointments
+├── sample_data/
+│   └── sample_lab_report.pdf   ← sample PDF for testing
+├── tests/
+│   └── test_automations.py     ← test each automation
+├── .env
+└── requirements.txt
+
+-------------------------------------------------------------
+STEP 3 — CLINICAL DATABASE SETUP
+-------------------------------------------------------------
+
+### create_clinical_db.py
+
+Download dataset from:
+  https://www.kaggle.com/datasets/prasad22/healthcare-dataset
+
+OR use this Python script to generate synthetic data with Faker:
+
+import pandas as pd
+from faker import Faker
+import random
+from sqlalchemy import create_engine
+import os
+from dotenv import load_dotenv
+
+fake = Faker('en_IN')  # Indian locale
+
+Generate these tables and populate with 1000+ rows each:
+
+TABLE: patients
+Columns:
+  id (VARCHAR PRIMARY KEY) - format: P-2024-{4digits}
+  name (VARCHAR)
+  age (INTEGER)
+  gender (VARCHAR) - Male/Female/Other
+  blood_type (VARCHAR) - A+, B+, O+, etc.
+  phone (VARCHAR)
+  email (VARCHAR)
+  address (TEXT)
+  emergency_contact (VARCHAR)
+  registered_date (DATE)
+  insurance_id (VARCHAR)
+
+TABLE: conditions (diagnoses)
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR FK → patients.id)
+  condition_name (VARCHAR) 
+    - Use these: Diabetes, Hypertension, Asthma, 
+      Heart Disease, Kidney Disease, Anemia, 
+      Tuberculosis, Dengue, Malaria, COVID-19
+  diagnosed_date (DATE)
+  severity (VARCHAR) - Mild/Moderate/Severe
+  status (VARCHAR) - Active/Resolved/Chronic
+  doctor_id (VARCHAR FK → doctors.id)
+
+TABLE: doctors
+Columns:
+  id (VARCHAR PRIMARY KEY) - format: D-{4digits}
+  name (VARCHAR)
+  specialization (VARCHAR)
+    - Cardiologist, Endocrinologist, Pulmonologist,
+      Nephrologist, General Physician, Neurologist
+  department (VARCHAR)
+  phone (VARCHAR)
+  available_days (VARCHAR) - "Mon,Tue,Wed,Thu,Fri"
+  max_patients_per_day (INTEGER)
+
+TABLE: encounters (hospital visits)
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR FK → patients.id)
+  doctor_id (VARCHAR FK → doctors.id)
+  admission_date (DATETIME)
+  discharge_date (DATETIME) - nullable
+  department (VARCHAR) - ICU, Cardiology, General, Emergency
+  visit_type (VARCHAR) - Inpatient/Outpatient/Emergency
+  chief_complaint (TEXT)
+  status (VARCHAR) - Active/Discharged/Transferred
+
+TABLE: medications
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR FK → patients.id)
+  doctor_id (VARCHAR FK → doctors.id)
+  encounter_id (VARCHAR FK → encounters.id)
+  drug_name (VARCHAR)
+  dosage (VARCHAR)
+  frequency (VARCHAR) - Once/Twice/Thrice daily
+  start_date (DATE)
+  end_date (DATE)
+  status (VARCHAR) - Active/Completed/Discontinued
+
+TABLE: lab_results
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR FK → patients.id)
+  test_name (VARCHAR) - Glucose, HbA1c, BP, Creatinine, CBC
+  value (FLOAT)
+  unit (VARCHAR)
+  normal_min (FLOAT)
+  normal_max (FLOAT)
+  status (VARCHAR) - Normal/High/Low/Critical
+  test_date (DATETIME)
+  technician_id (VARCHAR)
+
+TABLE: insurance
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR FK → patients.id)
+  provider (VARCHAR) - Star Health, HDFC Ergo, LIC, Government
+  policy_number (VARCHAR)
+  coverage_amount (FLOAT)
+  claim_status (VARCHAR) - Pending/Approved/Rejected/Not Filed
+  claim_amount (FLOAT)
+  filed_date (DATE)
+  resolved_date (DATE) - nullable
+
+Load all tables into PostgreSQL using SQLAlchemy + pandas to_sql()
+
+-------------------------------------------------------------
+STEP 4 — OPERATIONS DATABASE SETUP
+-------------------------------------------------------------
+
+### create_operations_db.py
+
+Create SQLite database: operations.db
+
+TABLE: beds
+Columns:
+  id (VARCHAR PRIMARY KEY) - format: BED-{ward}{number}
+  ward (VARCHAR) - ICU, Cardiology, General, Emergency, Pediatrics
+  room_number (VARCHAR)
+  status (VARCHAR) - Available/Occupied/Maintenance
+  patient_id (VARCHAR) - nullable, current patient
+  assigned_date (DATETIME) - nullable
+
+TABLE: appointments
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR)
+  doctor_id (VARCHAR)
+  appointment_date (DATETIME)
+  duration_minutes (INTEGER) - default 30
+  type (VARCHAR) - Consultation/Follow-up/Lab Review
+  status (VARCHAR) - Scheduled/Completed/Cancelled/No-show
+  notes (TEXT)
+  created_at (DATETIME)
+
+TABLE: billing
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  patient_id (VARCHAR)
+  encounter_id (VARCHAR)
+  total_amount (FLOAT)
+  insurance_covered (FLOAT)
+  patient_due (FLOAT)
+  status (VARCHAR) - Pending/Partial/Paid
+  created_at (DATETIME)
+  paid_at (DATETIME) - nullable
+
+TABLE: alerts
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  name (VARCHAR)
+  condition_sql (TEXT)
+  threshold (FLOAT)
+  operator (VARCHAR) - >, <, =, >=, <=
+  message (TEXT)
+  active (BOOLEAN)
+  created_at (DATETIME)
+  last_triggered (DATETIME) - nullable
+
+TABLE: alert_history
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  alert_id (VARCHAR FK → alerts.id)
+  triggered_at (DATETIME)
+  value_at_trigger (FLOAT)
+  notification_sent (BOOLEAN)
+
+TABLE: dashboard_charts
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  title (VARCHAR)
+  chart_json (TEXT) - plotly JSON as string
+  chart_type (VARCHAR)
+  session_id (VARCHAR)
+  pinned_at (DATETIME)
+  position_x (INTEGER)
+  position_y (INTEGER)
+
+TABLE: chat_history
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  session_id (VARCHAR)
+  role (VARCHAR) - user/agent
+  content (TEXT)
+  message_type (VARCHAR) - text/chart/flowchart/table
+  data_json (TEXT) - nullable
+  is_favorite (BOOLEAN)
+  created_at (DATETIME)
+
+TABLE: sms_log
+Columns:
+  id (VARCHAR PRIMARY KEY)
+  recipient (VARCHAR)
+  message (TEXT)
+  status (VARCHAR) - Sent/Failed/Pending
+  sent_at (DATETIME)
+
+### seed_operations_db.py
+- Add 50 beds across all wards (some Available, some Occupied)
+- Add 3 default alerts:
+  1. "Alert if ICU beds > 80% full"
+  2. "Alert if glucose critical readings > 5 today"  
+  3. "Alert if pending insurance claims > 20"
+- Add 20 sample appointments
+
+-------------------------------------------------------------
+STEP 5 — HOSPITAL AUTOMATIONS
+-------------------------------------------------------------
+
+### patient_registration.py
+
+Class: PatientRegistration
+
+Method: register_patient(name, age, gender, condition, doctor_name)
+  Steps:
+  1. Generate unique patient ID: P-{year}-{random 4 digits}
+  2. Find doctor by name/specialization in clinical DB
+  3. INSERT into patients table
+  4. INSERT into conditions table if condition provided
+  5. Find available appointment slot for doctor
+  6. INSERT into appointments table in operations DB
+  7. Generate welcome message with ID + appointment details
+  8. Log SMS in sms_log table
+  
+  Returns:
+  {
+    "patient_id": "P-2024-8821",
+    "patient_name": "John Doe",
+    "doctor_assigned": "Dr. Sharma",
+    "appointment": "2024-12-15 10:30 AM",
+    "actions_completed": ["registered", "condition_filed", 
+                         "appointment_scheduled", "sms_queued"],
+    "message": "Patient registered successfully"
+  }
+
+### discharge_pipeline.py
+
+Class: DischargePipeline
+
+Method: discharge_patient(patient_id)
+  Steps:
+  1. Fetch patient details from clinical DB
+  2. Fetch current encounter (status = Active)
+  3. Update encounter: set discharge_date = NOW(), status = Discharged
+  4. Fetch all active medications → generate prescription list
+  5. Calculate bill:
+     - Count days admitted × daily rate (₹2000 base)
+     - Add procedure costs from encounters
+     - Check insurance coverage
+     - Calculate patient due amount
+  6. INSERT into billing table
+  7. Free up bed: UPDATE beds SET status = Available WHERE patient_id = ?
+  8. Schedule follow-up appointment (14 days from today)
+  9. Generate discharge summary text
+  10. Log all actions
+  
+  Returns:
+  {
+    "patient_id": "...",
+    "patient_name": "...",
+    "discharge_summary": "Patient admitted for... treated with...",
+    "prescription": [{"drug": "Metformin", "dosage": "500mg", ...}],
+    "bill": {
+      "total": 24500,
+      "insurance_covered": 18000,
+      "patient_due": 6500,
+      "status": "Pending"
+    },
+    "follow_up": "2024-12-29 11:00 AM",
+    "bed_freed": "BED-GEN-12",
+    "actions_completed": [...]
+  }
+
+### prescription_checker.py
+
+Class: PrescriptionChecker
+
+DRUG_INTERACTIONS dict (hardcode these):
+{
+  "Metformin": {
+    "contraindications": ["kidney_disease"],
+    "lab_checks": {"Creatinine": {"max": 1.5}},
+    "alternatives": ["Sitagliptin 100mg", "Glipizide 5mg"]
+  },
+  "Warfarin": {
+    "contraindications": [],
+    "lab_checks": {},
+    "drug_interactions": ["Aspirin", "Ibuprofen"]
+  },
+  "ACE_Inhibitor": {
+    "contraindications": ["kidney_disease"],
+    "lab_checks": {"Creatinine": {"max": 2.0}},
+    "alternatives": ["Amlodipine 5mg"]
+  }
+}
+
+Method: check_prescription(patient_id, drug_name, dosage)
+  Steps:
+  1. Fetch patient's active conditions from clinical DB
+  2. Fetch patient's latest lab results
+  3. Check drug against DRUG_INTERACTIONS dict
+  4. Check if patient has any contraindicated conditions
+  5. Check if lab values are within safe range for drug
+  6. Check for interactions with current medications
+  
+  Returns:
+  {
+    "safe": True/False,
+    "warnings": ["Creatinine elevated - Metformin contraindicated"],
+    "alternatives": ["Sitagliptin 100mg"],
+    "proceed": True/False,
+    "requires_confirmation": True/False
+  }
+
+### lab_processor.py
+
+Class: LabReportProcessor
+
+Method: process_pdf(pdf_path, patient_id)
+  Steps:
+  1. Use pdfplumber to extract text from PDF
+  2. Parse lab values using regex patterns:
+     - Pattern: "Test Name: VALUE UNIT (Range: MIN-MAX)"
+     - Look for: Glucose, HbA1c, Creatinine, Hemoglobin, WBC, BP
+  3. For each extracted value:
+     - Determine status: Normal/High/Low/Critical
+     - Critical thresholds:
+       Glucose > 400 → Critical High
+       Glucose < 50 → Critical Low  
+       HbA1c > 10 → Critical
+       Creatinine > 3.0 → Critical
+  4. INSERT all results into lab_results table
+  5. If any Critical values found:
+     - Fetch patient's assigned doctor
+     - Log alert in alert_history
+     - Create urgent notification in sms_log
+  
+  Returns:
+  {
+    "patient_id": "...",
+    "results_extracted": 8,
+    "critical_values": [
+      {"test": "Glucose", "value": 420, "status": "Critical High"}
+    ],
+    "doctor_alerted": "Dr. Sharma",
+    "all_results": [...]
+  }
+
+### appointment_scheduler.py
+
+Class: AppointmentScheduler
+
+Method: schedule_appointment(patient_id, doctor_id, type, preferred_date)
+  Steps:
+  1. Fetch doctor's available_days and max_patients_per_day
+  2. Count existing appointments for doctor on preferred_date
+  3. If full, find next available date within 7 days
+  4. Find next available time slot (9 AM start, 30 min each)
+  5. INSERT into appointments table
+  6. Log SMS confirmation
+  
+  Returns:
+  {
+    "appointment_id": "...",
+    "patient_id": "...",
+    "doctor_id": "...",
+    "scheduled_date": "2024-12-15",
+    "scheduled_time": "10:30 AM",
+    "status": "Scheduled"
+  }
+
+Method: bulk_schedule(condition, check_type)
+  - Finds all patients with given condition
+  - Schedules them all for given check_type
+  - Returns count and appointment list
+
+-------------------------------------------------------------
+STEP 6 — AUTOMATION API ENDPOINTS
+-------------------------------------------------------------
+
+Create automations/api_routes.py with FastAPI router:
+
+POST /automate/register-patient
+  Body: { name, age, gender, condition, doctor_name }
+  → calls PatientRegistration.register_patient()
+
+POST /automate/discharge/{patient_id}
+  → calls DischargePipeline.discharge_patient()
+
+POST /automate/check-prescription
+  Body: { patient_id, drug_name, dosage }
+  → calls PrescriptionChecker.check_prescription()
+
+POST /automate/process-lab-report
+  Body: multipart form with PDF file + patient_id
+  → calls LabReportProcessor.process_pdf()
+
+POST /automate/schedule-appointment
+  Body: { patient_id, doctor_id, type, preferred_date }
+  → calls AppointmentScheduler.schedule_appointment()
+
+GET /automate/bed-status
+  → Returns count of available/occupied beds by ward
+
+-------------------------------------------------------------
+STEP 7 — TEST FILE
+-------------------------------------------------------------
+
+### tests/test_automations.py
+
+Write tests for:
+- test_patient_registration() → register a patient, verify in DB
+- test_discharge_pipeline() → discharge patient, verify bed freed
+- test_prescription_checker() → check Metformin for kidney patient
+- test_lab_processor() → process a sample PDF
+- test_appointment_scheduler() → schedule + verify no conflicts
+
+Run tests: python -m pytest tests/
+
+-------------------------------------------------------------
+STEP 8 — PUSH INSTRUCTIONS
+-------------------------------------------------------------
+
+  git checkout -b feature/database-automations
+  git add .
+  git commit -m "feat: dual database setup and hospital automation pipelines"
+  git push origin feature/database-automations
+
+Then open a Pull Request to main on zoror2/Eli-gorous
+
+-------------------------------------------------------------
+WHAT DONE LOOKS LIKE:
+-------------------------------------------------------------
+✅ PostgreSQL clinical DB with 1000+ patients
+✅ SQLite operations DB with all tables
+✅ All 5 automation classes work
+✅ register_patient() returns full response
+✅ discharge_pipeline() frees bed + generates bill
+✅ prescription_checker() catches Metformin+kidney
+✅ lab_processor() extracts values from PDF
+✅ API endpoints respond correctly
+✅ All tests pass
+=============================================================
