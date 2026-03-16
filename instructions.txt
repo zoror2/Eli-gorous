@@ -1,0 +1,252 @@
+=============================================================
+  DATAGOD HEALTH — TEAMMATE 1: FRONTEND DEVELOPER
+  Branch name: feature/frontend-ui
+  Repo: zoror2/Eli-gorous
+=============================================================
+
+YOUR ROLE:
+You are building the entire frontend — the chat interface,
+dashboard, sidebar, and all UI components.
+
+TECH STACK:
+- React (Vite)
+- Tailwind CSS
+- Chart.js OR Recharts (for chart rendering)
+- Mermaid.js (for ER diagrams and flowcharts)
+- Web Speech API (for voice input)
+- Axios (for API calls to backend)
+
+-------------------------------------------------------------
+STEP 1 — PROJECT SETUP
+-------------------------------------------------------------
+
+Run these commands:
+
+  npm create vite@latest datagod-frontend -- --template react
+  cd datagod-frontend
+  npm install
+  npm install tailwindcss autoprefixer postcss
+  npm install axios
+  npm install recharts
+  npm install mermaid
+  npm install react-grid-layout
+  npm install react-router-dom
+  npx tailwindcss init -p
+
+In tailwind.config.js set:
+  content: ["./index.html", "./src/**/*.{js,jsx}"]
+
+In index.css add:
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+
+-------------------------------------------------------------
+STEP 2 — FOLDER STRUCTURE TO CREATE
+-------------------------------------------------------------
+
+src/
+├── components/
+│   ├── ChatWindow.jsx         ← main chat area
+│   ├── MessageBubble.jsx      ← individual message
+│   ├── InputBar.jsx           ← text input + voice button
+│   ├── SQLPreview.jsx         ← shows generated SQL before execution
+│   ├── ChartRenderer.jsx      ← renders bar/line/pie/scatter
+│   ├── FlowchartRenderer.jsx  ← renders mermaid diagrams
+│   ├── Sidebar.jsx            ← query history + favorites
+│   ├── Dashboard.jsx          ← pinned charts grid
+│   └── ExportButton.jsx       ← download chart/CSV
+├── pages/
+│   ├── ChatPage.jsx           ← main chat page
+│   └── DashboardPage.jsx      ← dashboard page
+├── hooks/
+│   └── useVoiceInput.js       ← voice recognition hook
+├── services/
+│   └── api.js                 ← all axios API calls
+├── App.jsx
+└── main.jsx
+
+-------------------------------------------------------------
+STEP 3 — COMPONENT DETAILS
+-------------------------------------------------------------
+
+### ChatWindow.jsx
+- Shows list of messages (user + agent)
+- Auto-scrolls to bottom on new message
+- Shows a "DataGod is thinking..." animated dots when loading
+- Each message can contain: text, SQL block, chart, flowchart, table
+- State: messages = [{role, content, type, data}]
+
+### MessageBubble.jsx
+Props: { role, content, type, data }
+- If role = "user" → right aligned, blue bubble
+- If role = "agent" → left aligned, white bubble with DataGod avatar
+- If type = "chart" → render <ChartRenderer data={data} />
+- If type = "flowchart" → render <FlowchartRenderer code={data} />
+- If type = "sql" → render <SQLPreview sql={data} />
+- If type = "table" → render an HTML table from data
+- If type = "alert" → render a red alert banner
+
+### InputBar.jsx
+- Text input field (full width)
+- Send button (on click + Enter key)
+- Microphone button (calls useVoiceInput hook)
+- When voice is active: mic button turns red + pulses
+- On submit: calls api.sendMessage(text)
+
+### SQLPreview.jsx
+Props: { sql }
+- Dark code block showing the SQL
+- "Run Query" button (green)
+- "Edit" button (lets user modify SQL before running)
+- Copy to clipboard button
+Style: dark background, green text like a terminal
+
+### ChartRenderer.jsx
+Props: { chartType, data, title }
+- chartType can be: "bar", "line", "pie", "scatter"
+- Use Recharts for all chart types
+- Include chart title
+- Include export button (PNG download)
+- Bar: BarChart from recharts
+- Line: LineChart from recharts
+- Pie: PieChart from recharts
+- Scatter: ScatterChart from recharts
+
+### FlowchartRenderer.jsx
+Props: { mermaidCode }
+- Use mermaid.js to render the diagram
+- useEffect to initialize mermaid on mount
+- Wrap in a scrollable div
+- Include download as SVG button
+
+### Sidebar.jsx
+- Left panel (collapsible)
+- Two tabs: "History" and "Favorites"
+- Each item shows: query text (truncated), timestamp
+- Click → reruns the query
+- Star icon → adds to favorites
+- Trash icon → deletes from history
+- Store in localStorage
+
+### Dashboard.jsx
+- Grid layout using react-grid-layout
+- Each pinned chart is a draggable/resizable card
+- Card header: chart title + unpin button + export button
+- Empty state: "No charts pinned yet. Ask a question and pin charts here."
+- Auto-refreshes all charts every 60 minutes
+
+### ExportButton.jsx
+Props: { type, data, filename }
+- type = "png" → downloads chart as image
+- type = "csv" → converts data to CSV and downloads
+- type = "pdf" → opens print dialog with just the chart
+
+### useVoiceInput.js (custom hook)
+- Uses window.webkitSpeechRecognition
+- Returns: { transcript, isListening, startListening, stopListening }
+- Language: 'en-IN' (Indian English)
+- Continuous: false (single query mode)
+
+### api.js (all backend calls)
+Base URL: http://localhost:8000
+
+Functions to implement:
+  sendMessage(message, sessionId) 
+    → POST /chat { message, session_id }
+    → Returns { response, type, data, sql }
+  
+  getHistory(sessionId)
+    → GET /history/{session_id}
+  
+  getSchema()
+    → GET /schema
+  
+  pinChart(chartData)
+    → POST /dashboard/pin { chart_data }
+  
+  getDashboard()
+    → GET /dashboard
+  
+  exportCSV(queryData)
+    → POST /export/csv { data }
+
+-------------------------------------------------------------
+STEP 4 — PAGES
+-------------------------------------------------------------
+
+### ChatPage.jsx
+Layout:
+  [Sidebar] | [ChatWindow] 
+                [InputBar at bottom]
+
+- On load: generate a sessionId (uuid) and store in state
+- Pass sessionId to all API calls
+- Handle loading state between send and response
+
+### DashboardPage.jsx
+Layout:
+  [Header: "DataGod Health — Live Dashboard"]
+  [Grid of pinned charts]
+  [Back to Chat button]
+
+-------------------------------------------------------------
+STEP 5 — APP.JSX ROUTING
+-------------------------------------------------------------
+
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+
+Routes:
+  / → ChatPage
+  /dashboard → DashboardPage
+
+-------------------------------------------------------------
+STEP 6 — STYLING GUIDELINES
+-------------------------------------------------------------
+
+Color palette:
+  Primary: #0EA5E9 (sky blue)
+  Background: #0F172A (dark navy)
+  Surface: #1E293B (dark card)
+  Text: #F1F5F9 (light)
+  Success: #22C55E (green)
+  Warning: #F59E0B (amber)
+  Danger: #EF4444 (red)
+  SQL block: #0D1117 bg, #22C55E text
+
+Font: Inter (import from Google Fonts)
+
+Overall feel: Dark, professional, like a hospital war room.
+NOT colorful or playful. Clean and serious.
+
+-------------------------------------------------------------
+STEP 7 — ENVIRONMENT
+-------------------------------------------------------------
+
+Create .env file:
+  VITE_API_BASE_URL=http://localhost:8000
+
+-------------------------------------------------------------
+STEP 8 — PUSH INSTRUCTIONS
+-------------------------------------------------------------
+
+  git checkout -b feature/frontend-ui
+  git add .
+  git commit -m "feat: complete frontend UI with chat, dashboard, voice input"
+  git push origin feature/frontend-ui
+
+Then open a Pull Request to main on zoror2/Eli-gorous
+
+-------------------------------------------------------------
+WHAT DONE LOOKS LIKE:
+-------------------------------------------------------------
+✅ Chat UI renders messages correctly
+✅ SQL preview shows before chart
+✅ Charts render inside chat bubbles
+✅ Mermaid diagrams render correctly
+✅ Voice input works in Chrome
+✅ Sidebar shows history and favorites
+✅ Dashboard page shows pinned charts
+✅ Export buttons work (PNG + CSV)
+✅ App runs on http://localhost:5173
+=============================================================
