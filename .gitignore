@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.sqlite3
+*.log
+.venv/
+venv/
+.env
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Workspace artifacts not needed in main push
+instructions.txt
+till_now.txt
+package-lock.json
+text/
+test/
+Landing-page/
+Eli-gorous-feature-frontend-agent/
+Eli-gorous-feature-database-automations/
